@@ -1,11 +1,6 @@
 	.code16
 # rewrite with AT&T syntax by falcon <wuzhangjin@gmail.com> at 081012
-#
-# SYS_SIZE is the number of clicks (16 bytes) to be loaded.
-# 0x3000 is 0x30000 bytes = 196kB, more than enough for current
-# versions of linux
-#
-	.equ SYSSIZE, 0x3000
+
 #
 #	bootsect.s		(C) 1991 Linus Torvalds
 #
@@ -24,243 +19,213 @@
 # read errors will result in a unbreakable loop. Reboot by hand. It
 # loads pretty fast by getting whole sectors at a time whenever possible.
 
-	.global _start, begtext, begdata, begbss, endtext, enddata, endbss
-	.text
-	begtext:
-	.data
-	begdata:
-	.bss
-	begbss:
-	.text
+.global _start, begtext, begdata, begbss, endtext, enddata, endbss
+.text
+begtext:
+.data
+begdata:
+.bss
+begbss:
+.text
 
-	.equ SETUPLEN, 4		# nr of setup-sectors
-	.equ BOOTSEG, 0x07c0		# original address of boot-sector
-	.equ INITSEG, 0x9000		# we move boot here - out of the way
-	.equ SETUPSEG, 0x9020		# setup starts here
-	.equ SYSSEG, 0x1000		# system loaded at 0x10000 (65536).
-	.equ ENDSEG, SYSSEG + SYSSIZE	# where to stop loading
+.equ BOOTSEG, 0x07c0				# bootsect 加载地址（上电后，BIOS 搬运第一个扇区（bootsect）到 0x7c00）
+.equ INITSEG, 0x9000				# bootsect 重定向地址
+.equ SETUPSEG, 0x9020				# setup 加载地址
 
-# ROOT_DEV:	0x000 - same type of floppy as boot.
-#		0x301 - first partition on first drive etc
-#
-##和源码不同，源码中是0x306 第2块硬盘的第一个分区
-#
-	.equ ROOT_DEV, 0x301
-	ljmp    $BOOTSEG, $_start
+# 将 bootsect（512 字节）从 0x07C00 搬运到 0x90000
+	ljmp $BOOTSEG, $_start			# 段间跳转，cs = 0x07c0，执行_start
 _start:
-	mov	$BOOTSEG, %ax	#将ds段寄存器设置为0x7C0
+	mov	$BOOTSEG, %ax
 	mov	%ax, %ds
-	mov	$INITSEG, %ax	#将es段寄存器设置为0x900
+	mov	$INITSEG, %ax
 	mov	%ax, %es
-	mov	$256, %cx		#设置移动计数值256字
-	sub	%si, %si		#源地址	ds:si = 0x07C0:0x0000
-	sub	%di, %di		#目标地址 es:si = 0x9000:0x0000
-	rep					#重复执行并递减cx的值
-	movsw				#从内存[si]处移动cx个字到[di]处
-	ljmp	$INITSEG, $go	#段间跳转，这里INITSEG指出跳转到的段地址，解释了cs的值为0x9000
-go:	mov	%cs, %ax		#将ds，es，ss都设置成移动后代码所在的段处(0x9000)
+	mov	$256, %cx					# 移动计数值 256 字
+	sub	%si, %si					# 源地址 ds:si = 0x07C0:0x0000
+	sub	%di, %di					# 目标地址 es:di = 0x9000:0x0000
+	rep								# 重复执行 movsw 并递减寄存器 cx 的值，直到 cx = 0
+	movsw							# 从内存[ds:si]处移动cx个字到[es:di]处（1 字 = 2 字节）
+
+	ljmp $INITSEG, $go				# 段间跳转，cs = 0x9000，执行go
+go:	
+	mov	%cs, %ax					# 将ds，es，ss都设置成移动后代码所在的段处(0x9000)
 	mov	%ax, %ds
 	mov	%ax, %es
-# put stack at 0x9ff00.
 	mov	%ax, %ss
-	mov	$0xFF00, %sp		# arbitrary value >>512
+	mov	$0xFF00, %sp				# 设置栈地址为 ss:sp = 0x9000:0xff00
 
-# load the setup-sectors directly after the bootblock.
-# Note that 'es' is already set up.
-
-#
-##ah=0x02 读磁盘扇区到内存	al＝需要独出的扇区数量
-##ch=磁道(柱面)号的低八位   cl＝开始扇区(位0-5),磁道号高2位(位6－7)
-##dh=磁头号					dl=驱动器号(硬盘则7要置位)
-##es:bx ->指向数据缓冲区；如果出错则CF标志置位,ah中是出错码
-#
 load_setup:
-	mov	$0x0000, %dx		# drive 0, head 0
-	mov	$0x0002, %cx		# sector 2, track 0
-	mov	$0x0200, %bx		# address = 512, in INITSEG
-	.equ    AX, 0x0200+SETUPLEN
-	mov     $AX, %ax		# service 2, nr of sectors
-	int	$0x13			# read it
-	jnc	ok_load_setup		# ok - continue
+	mov	$0x0000, %dx				# [7:0] dl 表示驱动器号（0 表示第一个软盘）, [15:8] dh 表示磁头号（0 表示第一个磁头）
+	mov	$0x0002, %cx				# [5:0] 表示起始扇区号（从 1 开始计数，这里是第 2 扇区），[15:6] 表示磁道号（0 表示第一个磁道）
+	mov	$0x0200, %bx				# 数据要加载到的内存地址，es:bx = 0x9000:0x0200，即 0x90200
+	mov $0x0204, %ax				# [15:8] ah 为 0x02，表示调用 BIOS 中断 0x13 的读磁盘扇区服务，[7:0] al 为 0x04，表示要读取的扇区数量
+	int	$0x13						# 调用 BIOS 中断 0x13，执行读磁盘操作
+	jnc	ok_load_setup				# 检查进位标志 CF，如果 CF = 0（即操作成功，没有进位），则跳转到标签 ok_load_setup 处继续执行
+
 	mov	$0x0000, %dx
-	mov	$0x0000, %ax		# reset the diskette
-	int	$0x13
+	mov	$0x0000, %ax				
+	int	$0x13						# 复位后再次尝试
 	jmp	load_setup
 
 ok_load_setup:
 
-# Get disk drive parameters, specifically nr of sectors/track
+# 获取磁盘信息并存储到 sectors
+	mov	$0x00, %dl       			# [0:7] dl 表示驱动器号（0 表示第一个软盘）
+	mov	$0x0800, %ax     			# [15:8] ah 为 0x08，表示调用 BIOS 中断 0x13 的获取磁盘参数服务
+	int	$0x13            			# 调用 BIOS 中断 0x13，执行获取磁盘参数的操作
+	mov	$0x00, %ch       			# 获取每磁道的扇区数并存储到 sectors 标签处的内存位置
+	mov	%cx, %cs:sectors+0
 
-	mov	$0x00, %dl
-	mov	$0x0800, %ax		# AH=8 is get drive parameters
-	int	$0x13
-	mov	$0x00, %ch
-	#seg cs
-	mov	%cx, %cs:sectors+0	# %cs means sectors is in %cs
-	mov	$INITSEG, %ax
+# 打印启动信息
+	mov $0x03, %ah         			# 设置 BIOS 中断 0x10 的功能号为 0x03，用于读取光标位置
+	xor %bh, %bh           			# 将 bh 寄存器清零，表示选择第 0 页
+	int $0x10              			# 调用 BIOS 中断 0x10，读取光标位置
+
+	mov	$30, %cx					# 打印字符数目
+	mov	$0x0007, %bx				# page 0, attribute 7 (normal)
+	mov	$INITSEG, %ax     			# 指定 string 位置 es:bp = 0x9000:msg1
 	mov	%ax, %es
-
-# Print some inane message
-
-	mov	$0x03, %ah		# read cursor pos
-	xor	%bh, %bh
-	int	$0x10
-	
-	mov	$30, %cx
-	mov	$0x0007, %bx		# page 0, attribute 7 (normal)
-	#lea	msg1, %bp
-	mov     $msg1, %bp
-	mov	$0x1301, %ax		# write string, move cursor
+	mov $msg1, %bp
+	mov	$0x1301, %ax				# 打印字符串并移动光标
 	int	$0x10
 
-# ok, we've written the message, now
-# we want to load the system (at 0x10000)
+.equ SYSSEG, 0x1000					# linux内核镜像加载地址
+.equ SYSSIZE, 0x3000				# linux内核镜像大小
+.equ ENDSEG, SYSSEG + SYSSIZE		# linux内核镜像结束地址
 
+# 加载 Linux 内核镜像
 	mov	$SYSSEG, %ax
-	mov	%ax, %es		# segment of 0x010000
-	call	read_it
-	call	kill_motor
+	mov	%ax, %es
+	call load_system
+	call kill_motor
 
-# After that we check which root-device to use. If the device is
-# defined (#= 0), nothing is done and the given device is used.
-# Otherwise, either /dev/PS0 (2,28) or /dev/at0 (2,8), depending
-# on the number of sectors that the BIOS reports currently.
-
-	#seg cs
-	mov	%cs:root_dev+0, %ax
-	cmp	$0, %ax
-	jne	root_defined
-	#seg cs
-	mov	%cs:sectors+0, %bx
-	mov	$0x0208, %ax		# /dev/ps0 - 1.2Mb
-	cmp	$15, %bx
-	je	root_defined
-	mov	$0x021c, %ax		# /dev/PS0 - 1.44Mb
-	cmp	$18, %bx
-	je	root_defined
-undef_root:
-	jmp undef_root
-root_defined:
-	#seg cs
-	mov	%ax, %cs:root_dev+0
-
-# after that (everyting loaded), we jump to
-# the setup-routine loaded directly after
-# the bootblock:
-
+# 跳转执行 setup
 	ljmp	$SETUPSEG, $0
 
-# This routine loads the system at address 0x10000, making sure
-# no 64kB boundaries are crossed. We try to load it as fast as
-# possible, loading whole tracks whenever we can.
-#
-# in:	es - starting address segment (normally 0x1000)
-#
-sread:	.word 1+ SETUPLEN	# sectors read of current track
-head:	.word 0			# current head
-track:	.word 0			# current track
 
-read_it:
-	mov	%es, %ax
-	test	$0x0fff, %ax
-die:	jne 	die			# es must be at 64kB boundary
-	xor 	%bx, %bx		# bx is starting address within segment
-rp_read:
-	mov 	%es, %ax
- 	cmp 	$ENDSEG, %ax		# have we loaded all yet?
-	jb	ok1_read
-	ret
-ok1_read:
-	#seg cs
-	mov	%cs:sectors+0, %ax
-	sub	sread, %ax
-	mov	%ax, %cx
-	shl	$9, %cx
-	add	%bx, %cx
-	jnc 	ok2_read
-	je 	ok2_read
-	xor 	%ax, %ax
-	sub 	%bx, %ax
-	shr 	$9, %ax
-ok2_read:
-	call 	read_track
-	mov 	%ax, %cx
-	add 	sread, %ax
-	#seg cs
-	cmp 	%cs:sectors+0, %ax
-	jne 	ok3_read
-	mov 	$1, %ax
-	sub 	head, %ax
-	jne 	ok4_read
-	incw    track 
-ok4_read:
-	mov	%ax, head
+#################### 以下代码实现加载 Linux 内核镜像功能 ####################
+## 读取顺序：扇区 -> 磁头 -> 磁道
+sread:	.word 5						# 当前已经读取的扇区数目（已经读取了 bootsect 和 setup）
+head:	.word 0						# 当前磁头
+track:	.word 0						# 当前磁道
+
+load_system:
+	xor %bx, %bx					# 清 0 段内偏移
+
+	mov	%es, %ax					# linux内核镜像加载地址必须 64K 对齐（es = 0x1000），否则死循环执行 die
+	test $0x0fff, %ax
+die:	
+	jne die
+
+loop_load_kernel:
+	mov %es, %ax					# 寄存器 es 存储当前搬运的目的地址，会逐渐增加
+ 	cmp $ENDSEG, %ax
+	jb calc_next_load_sector		# 获取下一次搬运的扇区数
+	ret								# linux内核镜像加载结束，返回 call load_system 位置
+
+calc_next_load_sector:
+    mov %cs:sectors+0, %ax
+    sub sread, %ax                 	# 当前磁片的当前磁道剩余待读取的扇区数
+
+    mov %ax, %cx
+    shl $9, %cx                    	# 一个扇区是 512 字节（2^9），获取剩余未读字节数
+    add %bx, %cx                   	# cx = ax * 512 + bx，bx 是段内偏移，加上待读字节数，检查是否越界（64k）
+	jc segment_overrun
+
+# 段内加载
+load_sectors_in_segment:
+	call read_track
+
+	mov %ax, %cx          			# 寄存器 cx 存储本次读取扇区数目
+	add sread, %ax        			# 检查是否读完当前磁道的所有扇区，如未读完则跳转到标签 check_and_continue_load 处继续读取
+	cmp %cs:sectors+0, %ax
+	jne check_and_continue_load
+
+	mov $1, %ax						# 已读完当前磁道的所有扇区，判断是否需要更新磁头，如需要则跳转到标签 update_head_if_needed 处执行（2磁头，单磁盘？？？）
+	sub head, %ax
+	jne	update_head_if_needed
+
+	incw track         				# 如果当前磁头是最后一个磁头，将 track 标签处存储的当前磁道号加 1，表示要切换到下一个磁道
+
+update_head_if_needed:
+	mov	%ax, head					# 更新磁头，并清 0 已读取扇区数目
 	xor	%ax, %ax
-ok3_read:
-	mov	%ax, sread
-	shl	$9, %cx
-	add	%cx, %bx
-	jnc	rp_read
-	mov	%es, %ax
-	add	$0x1000, %ax
-	mov	%ax, %es
-	xor	%bx, %bx
-	jmp	rp_read
+
+check_and_continue_load:
+    mov %ax, sread                 	# 更新已读取的扇区数
+    shl $9, %cx                    	# bx = cx * 512 + bx，bx 是段内偏移，加上待读字节数，检查是否越界（64k）
+    add %cx, %bx
+    jnc loop_load_kernel            # 检查进位标志 CF，如果没有进位（即相加结果没有溢出），则跳转到标签 loop_load_kernel 处继续执行加载操作
+    
+	mov %es, %ax                   	# 处理越界情况，更新寄存器 es，指向下一个 64KB 段（0x1000 -> 0x2000 -> 0x3000 -> 0x4000）
+    add $0x1000, %ax
+    mov %ax, %es
+    xor %bx, %bx                   	# 将寄存器 bx 的值清零，将内存偏移地址重置为 0
+    jmp loop_load_kernel            # 跳转到标签 loop_load_kernel 进行下一段的内容加载
 
 read_track:
-	push	%ax
-	push	%bx
-	push	%cx
-	push	%dx
-	mov	track, %dx
-	mov	sread, %cx
-	inc	%cx
-	mov	%dl, %ch
-	mov	head, %dx
-	mov	%dl, %dh
-	mov	$0, %dl
-	and	$0x0100, %dx
-	mov	$2, %ah
-	int	$0x13
-	jc	bad_rt
-	pop	%dx
-	pop	%cx
-	pop	%bx
-	pop	%ax
-	ret
-bad_rt:	mov	$0, %ax
-	mov	$0, %dx
-	int	$0x13
-	pop	%dx
-	pop	%cx
-	pop	%bx
-	pop	%ax
-	jmp	read_track
+	push %ax            			# 将寄存器 ax bx cx dx 的值压入栈中保存，防止后续操作修改该值影响其他部分的代码
+	push %bx
+	push %cx
+	push %dx
 
-#/*
-# * This procedure turns off the floppy drive motor, so
-# * that we enter the kernel in a known state, and
-# * don't have to worry about it later.
-# */
+	mov track, %dx      			# 将磁道号加载到寄存器 dx
+	mov sread, %cx      			# 将磁道已读取的扇区数加载到寄存器 cx，+1表示待读取的起始扇区
+	inc %cx
+	mov %dl, %ch        			# 柱面号
+
+	mov head, %dh        			# 设置磁盘操作的磁头号
+	mov $0, %dl         			# 选择第一个磁盘驱动器
+	mov $2, %ah         			# 将寄存器 ah 的值设置为 2，表示调用 BIOS 中断 0x13 的读磁盘扇区服务
+	int $0x13           			# 调用 BIOS 中断 0x13，执行读磁盘操作
+	
+	jc bad_rt           			# 检查进位标志 CF，如果 CF = 1（即操作失败，产生进位），则跳转到标签 bad_rt 处进行错误处理
+	pop %dx             			# 从栈中弹出内容，恢复寄存器 dx cx bx ax 中原来的值
+	pop %cx
+	pop %bx
+	pop %ax 
+	ret                 			# 从子程序返回，返回到调用 read_track 函数的地方
+
+bad_rt:	
+	mov	$0, %ax
+	mov	$0, %dx
+	int	$0x13						# 复位
+
+	pop	%dx							# 从栈中弹出内容，恢复寄存器 dx cx bx ax 中原来的值
+	pop	%cx
+	pop	%bx
+	pop	%ax
+	jmp	read_track					# 再次尝试读取
+
+# 关闭软盘驱动器的电机，这样我们就能以已知状态进入内核，之后就无需再担心电机状态
 kill_motor:
-	push	%dx
-	mov	$0x3f2, %dx
-	mov	$0, %al
-	outsb
-	pop	%dx
-	ret
+	push %dx            			# 将寄存器 dx 的值压入栈中保存
+	mov $0x3f2, %dx     			# 将立即数 0x3f2 赋值给寄存器 dx。0x3f2 通常是软盘控制器的一个端口地址，该端口用于控制软盘驱动器的电机
+	mov $0, %al         			# 将立即数 0 赋值给寄存器 al。这里的 0 表示要写入到 0x3f2 端口的数据，用于关闭软盘驱动器的电机
+	outsb               			# 将寄存器 al 中的字节数据输出到 dx 寄存器指定的端口（即 0x3f2 端口），以此来关闭软盘驱动器的电机
+	pop %dx             			# 从栈中弹出之前保存的值到寄存器 dx，恢复 dx 寄存器原来的值
+	ret                 			# 从子程序返回，返回到调用该子程序的地方，结束当前子程序的执行
+
+segment_overrun:
+	xor %ax, %ax					# 处理超过边界的情况，只读取当前段剩余空间的内容
+    sub %bx, %ax
+    shr $9, %ax
+	jmp load_sectors_in_segment
 
 sectors:
 	.word 0
 
 msg1:
-	.byte 13,10
+	.byte 13,10						# 13 表示回车符，10 表示换行符
 	.ascii "IceCityOS is booting ..."
 	.byte 13,10,13,10
 
 	.org 508
+
+# 设置根设备号 root_dev
+.equ ROOT_DEV, 0x301
 root_dev:
 	.word ROOT_DEV
+
 boot_flag:
 	.word 0xAA55
 	
