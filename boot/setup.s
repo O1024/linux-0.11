@@ -178,6 +178,17 @@ _start:
 	mov %ds:0x8e, %ax 				# 打印 0x9008E 处保存的硬盘扇区
 	call print_hex
 	call print_nl
+	call print_nl
+
+# 保存最终光标位置到 0x9000:0x0000，防止内核打印覆盖之前的打印
+
+	mov	$INITSEG, %ax				# 设置数据段寄存器 ds 为0x9000
+	mov	%ax, %ds
+
+	mov	$0x03, %ah					# 设置 BIOS 中断 0x10 的功能号为 0x03，用于读取光标位置
+	xor	%bh, %bh      				# 将 bh 寄存器清零，表示选择第 0 页
+	int	$0x10						# 调用 BIOS 中断 0x10，读取光标位置
+	mov	%dx, %ds:0					# 将光标位置（dx 寄存器）保存到 0x90000 处
 
 # 检查硬盘 hd1 是否存在
 	mov	$0x01500, %ax 				# 将 0x01500 加载到 ax 寄存器，作为 BIOS 中断 0x13 的功能号
