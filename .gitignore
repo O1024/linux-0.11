@@ -8,5 +8,5 @@ Thumbs.db
 Image
 system
 *.map
-boot/bootsect
-boot/setup
+*/bootsect
+*/setup
