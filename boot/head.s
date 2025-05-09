@@ -18,29 +18,29 @@
 pg_dir:
 
 startup_32:
-    movl $0x10, %eax				# 将 ds es fs gs 均赋值为 0x10
-    mov %ax, %ds  					
+    movl $0x10, %eax                    # 将 ds es fs gs 均赋值为 0x10
+    mov %ax, %ds                      
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
 
-	# 【Linux0.11源码：08 - 重新设置 idt 和 gdt】https://www.bilibili.com/video/BV1EN411m7i5?vd_source=42b160e534344d104f989af204cd1525
-    lss stack_start, %esp  			# 从 stack_start 处加载栈段选择子和栈指针到 ss 和 esp 寄存器
-    call setup_idt  				# 设置中断描述符表（IDT）
-    call setup_gdt  				# 设置全局描述符表（GDT）
+    # 【Linux0.11源码：08 - 重新设置 idt 和 gdt】https://www.bilibili.com/video/BV1EN411m7i5?vd_source=42b160e534344d104f989af204cd1525
+    lss stack_start, %esp               # 从 stack_start 处加载栈段选择子和栈指针到 ss 和 sp 寄存器（指向 user_stack 尾部，1KB空间）
+    call setup_idt                      # 设置中断描述符表（IDT）
+    call setup_gdt                      # 设置全局描述符表（GDT）
 
-    movl $0x10, %eax  				# 将 ds es fs gs 均赋值为 0x10
+    movl $0x10, %eax                    # 将 ds es fs gs 均赋值为 0x10，00010 0 00，gdt 数据段 0级别权限
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
 
-    lss stack_start, %esp  			# 重新加载栈段选择子和栈指针到 ss 和 esp 寄存器
-    xorl %eax, %eax 				# 将 eax 寄存器清零
+    lss stack_start, %esp               # 重新加载栈段选择子和栈指针到 ss 和 esp 寄存器
+    xorl %eax, %eax                     # 将 eax 寄存器清零
 
 # 检查 A20 地址线是否启用
 1: 
-    incl %eax						# 写任意值到地址 0x000000，如果未启用 A20，访问 0x100000 实际还是访问的 0x000000
+    incl %eax                           # 写任意值到地址 0x000000，如果未启用 A20，访问 0x100000 实际还是访问的 0x000000
     movl %eax,0x000000
     cmpl %eax,0x100000
     je 1b
@@ -54,29 +54,29 @@ startup_32:
  *  # 这样就不需要调用 "verify_area()" 函数了。
  *  # 486 用户可能还想设置 NE (#5) 位，以便使用中断 16 处理数学错误
  */
-    movl %cr0, %eax  				# 将控制寄存器 cr0 的值读取到 eax 寄存器，用于检查数学协处理器
-    andl $0x80000011, %eax  		# 保存 PG（分页）、PE（保护模式）、ET（协处理器类型）标志位
-    orl $2, %eax  					# 设置 MP（数学协处理器存在）标志位
-    movl %eax, %cr0  				# 将修改后的 eax 寄存器的值写回控制寄存器 cr0
-    call check_x87  				# 调用 check_x87 函数，检查数学协处理器
+    movl %cr0, %eax                     # 将控制寄存器 cr0 的值读取到 eax 寄存器，用于检查数学协处理器
+    andl $0x80000011, %eax              # 保存 PG（分页）、PE（保护模式）、ET（协处理器类型）标志位
+    orl $2, %eax                        # 设置 MP（数学协处理器存在）标志位
+    movl %eax, %cr0                     # 将修改后的 eax 寄存器的值写回控制寄存器 cr0
+    call check_x87                      # 调用 check_x87 函数，检查数学协处理器
     jmp after_page_tables
 
 /*
  * We depend on ET to be correct. This checks for 287/387.
  */
 check_x87:
-    fninit  						# 初始化数学协处理器
-    fstsw %ax  						# 将数学协处理器的状态字存储到 ax 寄存器
-    cmpb $0, %al  					# 比较 al 寄存器的值是否为 0
-    je 1f 							# 如果相等，跳转到标签 1（向前跳转），说明没有数学协处理器
-    movl %cr0, %eax  				# 将控制寄存器 cr0 的值读取到 eax 寄存器
-    xorl $6, %eax  					# 重置 MP 标志位，设置 EM（模拟协处理器）标志位
-    movl %eax, %cr0  				# 将修改后的 eax 寄存器的值写回控制寄存器 cr0
+    fninit                              # 初始化数学协处理器
+    fstsw %ax                           # 将数学协处理器的状态字存储到 ax 寄存器
+    cmpb $0, %al                        # 比较 al 寄存器的值是否为 0
+    je 1f                               # 如果相等，跳转到标签 1（向前跳转），说明没有数学协处理器
+    movl %cr0, %eax                     # 将控制寄存器 cr0 的值读取到 eax 寄存器
+    xorl $6, %eax                       # 重置 MP 标志位，设置 EM（模拟协处理器）标志位
+    movl %eax, %cr0                     # 将修改后的 eax 寄存器的值写回控制寄存器 cr0
     ret
 
 .align 2
 1:
-    .byte 0xDB,0xE4  				# 287 数学协处理器的 fsetpm 指令，387 协处理器会忽略该指令
+    .byte 0xDB,0xE4                     # 287 数学协处理器的 fsetpm 指令，387 协处理器会忽略该指令
     ret
 
 /*
@@ -94,20 +94,20 @@ check_x87:
  *  # 当中断处理函数准备好后，会在其他地方启用中断。该函数的代码将被页目录覆盖
  */
 setup_idt:
-    lea ignore_int, %edx  			# 将 ignore_int 函数的有效地址加载到 edx 寄存器
-    movl $0x00080000, %eax  		# 将立即数 0x00080000 移动到 eax 寄存器，0x0008 是代码段选择子
-    movw %dx, %ax  					# 将 edx 寄存器的低 16 位移动到 ax 寄存器，组合成中断门描述符的一部分
-    movw $0x8E00, %dx  				# 将立即数 0x8E00 移动到 dx 寄存器，0x8E00 表示中断门，DPL=0，存在标志位为 1
-    lea idt, %edi  					# 将 idt 的有效地址加载到 edi 寄存器，作为 IDT 表的起始地址
-    mov $256, %ecx  				# 将立即数 256 移动到 ecx 寄存器，作为循环计数器
+    lea ignore_int, %edx                # edx = &ignore_int = 0x5428
+    movl $0x00080000, %eax              # eax = 0x00080000, 0001 0 00，gdt 代码段 0级别权限
+    movw %dx, %ax                       # eax = eax | edx = 0x00080000 | 0x5428 = 0x00085428
+    movw $0x8E00, %dx                   # dx = 0x8E00，0x8E00 表示中断门，DPL=0，存在标志位为 1
+    lea idt, %edi                       # edi = &idt = 0x54b8
+    mov $256, %ecx                      # 将立即数 256 移动到 ecx 寄存器，作为循环计数器
 
 rp_sidt:
-    movl %eax, (%edi)  				# 将 eax 寄存器的值存储到 edi 指向的内存地址
-    movl %edx, 4(%edi)  			# 将 edx 寄存器的值存储到 edi 指向的内存地址偏移 4 字节处
-    addl $8, %edi  					# 将 edi 寄存器的值加 8，指向下一个中断门描述符的位置
-    dec %ecx  						# 将 ecx 寄存器的值减 1
-    jne rp_sidt  					# 如果 ecx 寄存器的值不为 0，跳转到 rp_sidt 标签继续循环
-    lidt idt_descr  				# 加载中断描述符表寄存器（IDTR），使用 idt_descr 中的信息
+    movl %eax, (%edi)                   # *edi = eax = 0x00085428
+    movl %edx, 4(%edi)                  # *(edi + 4) = edx = 0x8e00
+    addl $8, %edi                       # edi += 8
+    dec %ecx                            # ecx -= 1
+    jne rp_sidt                         # 如果 ecx 寄存器的值不为 0，跳转到 rp_sidt 继续加载
+    lidt idt_descr                      # 加载中断描述符表寄存器（IDTR），使用 idt_descr 中的信息
     ret
 
 /*
@@ -123,7 +123,7 @@ rp_sidt:
  *  # 该函数只有两行代码，但注释很长，因为它很重要。该函数的代码将被页目录覆盖
  */
 setup_gdt:
-    lgdt gdt_descr  				# 加载全局描述符表寄存器（GDTR），使用 gdt_descr 中的信息
+    lgdt gdt_descr                      # 加载全局描述符表寄存器（GDTR），使用 gdt_descr 中的信息
     ret
 
 /*
@@ -154,18 +154,18 @@ pg3:
  *  # 它需要对齐，以避免位于 64KB 边界上
  */
 tmp_floppy_area:
-    .fill 1024,1,0  				# 填充 1024 个字节，每个字节的值为 0
+    .fill 1024,1,0                  # 填充 1024 个字节，每个字节的值为 0
 
 after_page_tables:
-    pushl $0  						# 将 0 0 0 压入栈中，作为 main 函数的参数
+    pushl $0                          # 将 0 0 0 压入栈中，作为 main 函数的参数
     pushl $0
     pushl $0
-    pushl $L6  						# 将标签 L6 的地址压入栈中，作为 main 函数的返回地址
-    pushl $main  					# 将 main 函数的地址压入栈中
-    jmp setup_paging  				# 跳转到 setup_paging 函数，设置分页机制
+    pushl $L6                          # 将标签 L6 的地址压入栈中，作为 main 函数的返回地址
+    pushl $main                      # 将 main 函数的地址压入栈中
+    jmp setup_paging                  # 跳转到 setup_paging 函数，设置分页机制
 L6:
-    jmp L6  						# 无限循环，main 函数不应该返回到这里，但以防万一
-            						# 这里的无限循环确保系统不会执行不可预期的代码
+    jmp L6                          # 无限循环，main 函数不应该返回到这里，但以防万一
+                                    # 这里的无限循环确保系统不会执行不可预期的代码
 
 /* This is the default interrupt "handler" :-) */
 int_msg:
@@ -173,30 +173,30 @@ int_msg:
 
 .align 2
 ignore_int:
-    pushl %eax  					# 将 eax ecx edx ds es fs 寄存器的值压入栈中，保存现场
+    pushl %eax                          # 将 eax ecx edx ds es fs 寄存器的值压入栈中，保存现场
     pushl %ecx
     pushl %edx
     push %ds  
     push %es  
     push %fs
 
-    movl $0x10, %eax  				# 设置 ds es fs = 0x10
+    movl $0x10, %eax                    # 设置 ds es fs = 0x10
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
 
-    pushl $int_msg  				# 将 int_msg 字符串的地址压入栈中，作为 printk 函数的参数
-    call printk  					# 调用 printk 函数，输出未知中断信息
+    pushl $int_msg                      # 将 int_msg 字符串的地址压入栈中，作为 printk 函数的参数
+    call printk                         # 调用 printk 函数，输出未知中断信息
 
-    popl %eax  						# 从栈中弹出值到 eax ecx edx ds es fs 寄存器，恢复现场
+    popl %eax                           # 从栈中弹出值到 eax ecx edx ds es fs 寄存器，恢复现场
     pop %fs
     pop %es
     pop %ds
     popl %edx
     popl %ecx
     popl %eax
-	
-    iret  							# 中断返回，恢复中断前的状态
+    
+    iret                              # 中断返回，恢复中断前的状态
 
 /*
  * Setup_paging
@@ -234,57 +234,57 @@ ignore_int:
 # 【Linux0.11源码：09 - Intel 内存管理两板斧：分段与分页】https://www.bilibili.com/video/BV1214y1o7J4?vd_source=42b160e534344d104f989af204cd1525
 .align 2
 setup_paging:
-	# 清 0 0x000 -> 0x004 -> ...
-    movl $1024*5, %ecx  			# 将立即数 1024*5 移动到 ecx 寄存器，作为循环计数器，用于初始化 5 个页表（页目录 + 4 个页表）
-    xorl %eax, %eax  				# 将 eax 寄存器清零
-    xorl %edi, %edi  				# 将 edi 寄存器清零，edi 指向页目录的起始地址 0x000
-    cld  							# 清除方向标志位 DF，使串操作指令按地址递增方向执行
-    rep  							# 重复执行 stosl 指令，将 eax 寄存器的值存储到 edi 指向的内存地址，直到 ecx 寄存器的值为 0
-	stosl
+    # 从地址 0 开始清 0，大小 0x1400，5 个页面
+    movl $1024*5, %ecx                  # 将立即数 1024*5 移动到 ecx 寄存器，作为循环计数器，用于初始化 5 个页表（页目录 + 4 个页表）
+    xorl %eax, %eax                     # 将 eax 寄存器清零
+    xorl %edi, %edi                     # 将 edi 寄存器清零，edi 指向页目录的起始地址 0x000
+    cld                                 # 清除方向标志位 DF，使串操作指令按地址递增方向执行
+    rep                                 # 重复执行 stosl 指令，将 eax 寄存器的值存储到 edi 指向的内存地址，直到 ecx 寄存器的值为 0
+    stosl
 
-	# 设置页目录表
-    movl $pg0 + 7, pg_dir  			# 将页表 0 的地址加上 7（设置存在位、用户可读写位）存储到页目录的第一个条目
-    movl $pg1 + 7, pg_dir + 4  		# 将页表 1 的地址加上 7 存储到页目录的第二个条目
-    movl $pg2 + 7, pg_dir + 8  		# 将页表 2 的地址加上 7 存储到页目录的第三个条目
-    movl $pg3 + 7, pg_dir + 12 		# 将页表 3 的地址加上 7 存储到页目录的第四个条目
+    # 设置页目录表
+    movl $pg0 + 7, pg_dir               # *0x0 = 页表 0 的地址 + 7（设置存在位、用户可读写位）
+    movl $pg1 + 7, pg_dir + 4
+    movl $pg2 + 7, pg_dir + 8
+    movl $pg3 + 7, pg_dir + 12
 
-	# 设置页表项 pg3 pg2 pg1 pg0，包含地址和属性，*(0x4000 + 4092) = 0xfff007; *(0x4000 + 4088) = 0x0xffe007; 
-    movl $pg3 + 4092, %edi  		# 将页表 3 的最后一个条目的地址加载到 edi 寄存器
-    movl $0xfff007, %eax  			# 将立即数 0xfff007 移动到 eax 寄存器，0xfff007 表示 16MB - 4096 + 7（用户可读写、存在位）
-    std  							# 设置方向标志位 DF，使串操作指令按地址递减方向执行
+    # 设置页表项 pg3 pg2 pg1 pg0，包含地址和属性，*(0x4000 + 4092) = 0xfff007; *(0x4000 + 4088) = 0x0xffe007; 
+    movl $pg3 + 4092, %edi              # 将页表 3 的最后一个条目的地址加载到 edi 寄存器
+    movl $0xfff007, %eax                # 0xfff007 表示 16MB - 4096 + 7（用户可读写、存在位）
+    std                                 # 设置方向标志位 DF，使串操作指令按地址递减方向执行
 1:
-    stosl  							# 将 eax 寄存器的值存储到 edi 指向的内存地址，填充页表条目
-    subl $0x1000, %eax  			# 将 eax 寄存器的值减去 0x1000，指向前一个页框，1 页 4k
-    jge 1b  						# 如果 eax 寄存器的值大于等于 0，跳转到标签 1 继续循环
+    stosl                               # 将 eax 寄存器的值存储到 edi 指向的内存地址，填充页表条目
+    subl $0x1000, %eax                  # 将 eax 寄存器的值减去 0x1000，指向前一个页框，1 页 4k
+    jge 1b                              # 共设置 4096 个页表
 
-	# 保存页目录表地址并启动分页
-    cld  							# 清除方向标志位 DF，使串操作指令按地址递增方向执行
-    xorl %eax, %eax  				# 将 eax 寄存器清零
-    movl %eax, %cr3  				# 将 eax 寄存器的值（0x000）存储到控制寄存器 cr3，设置页目录的起始地址
-    movl %cr0, %eax  				# 将控制寄存器 cr0 的值读取到 eax 寄存器
-    orl $0x80000000, %eax  			# 设置 eax 寄存器的第 31 位，即分页标志位 PG
-    movl %eax, %cr0  				# 将修改后的 eax 寄存器的值写回控制寄存器 cr0，启用分页机制
-    ret								# 调用栈中压入地址，并返回执行（之前压入 main 地址）
+    # 保存页目录表地址并启动分页
+    cld                                 # 清除方向标志位 DF，使串操作指令按地址递增方向执行
+    xorl %eax, %eax                     # 将 eax 寄存器清零
+    movl %eax, %cr3                     # 将 eax 寄存器的值（0x000）存储到控制寄存器 cr3，设置页目录的起始地址
+    movl %cr0, %eax                     # 将控制寄存器 cr0 的值读取到 eax 寄存器
+    orl $0x80000000, %eax               # 设置 eax 寄存器的第 31 位，即分页标志位 PG
+    movl %eax, %cr0                     # 将修改后的 eax 寄存器的值写回控制寄存器 cr0，启用分页机制
+    ret                                 # 调用栈中压入地址，并返回执行（之前压入 main 地址）
 
 .align 2
-	.word 0
+    .word 0
 idt_descr:
-    .word 256*8-1  					# 定义 IDT 表的界限，256 个条目，每个条目 8 字节
-    .long idt  						# 定义 IDT 表的基地址
+    .word 256*8-1                      # 定义 IDT 表的界限，256 个条目，每个条目 8 字节
+    .long idt                          # 定义 IDT 表的基地址
 
 .align 2
-	.word 0
+    .word 0
 gdt_descr:
-    .word 256*8-1  					# 定义 GDT 表的界限，256 个条目，每个条目 8 字节
-    .long gdt  						# 定义 GDT 表的基地址
+    .word 256*8-1                      # 定义 GDT 表的界限，256 个条目，每个条目 8 字节
+    .long gdt                          # 定义 GDT 表的基地址
 
-.align 8  							# 按 8 字节对齐
+.align 8                              # 按 8 字节对齐
 idt:
-    .fill 256,8,0  					# 填充 256 个条目，每个条目 8 字节，初始值为 0，IDT 表初始化为空
+    .fill 256,8,0                      # 填充 256 个条目，每个条目 8 字节，初始值为 0，IDT 表初始化为空
 
 gdt:
-    .quad 0x0000000000000000  		# 定义 GDT 的第一个条目，空描述符
-    .quad 0x00c09a0000000fff  		# 定义代码段描述符，16MB
-    .quad 0x00c0920000000fff  		# 定义数据段描述符，16MB
-    .quad 0x0000000000000000  		# 临时描述符，暂不使用
-    .fill 252,8,0  					# 填充 252 个条目，每个条目 8 字节，初始值为 0，为 LDT 和 TSS 等预留空间
+    .quad 0x0000000000000000            # 定义 GDT 的第一个条目，空描述符
+    .quad 0x00c09a0000000fff            # 定义代码段描述符，00c0 ; 9a00 (1 00 1 1 0 1 0 00000000); 0000 段起始地址; 0fff limit 对应 4096，页 4KB，共 16MB
+    .quad 0x00c0920000000fff            # 定义数据段描述符，00c0 ; 9200 (1 00 1 0 0 1 0 00000000); 0000 段起始地址; 0fff limit 对应 4096，页 4KB，共 16MB
+    .quad 0x0000000000000000            # 临时描述符，暂不使用
+    .fill 252,8,0                       # 填充 252 个条目，每个条目 8 字节，初始值为 0，为 LDT 和 TSS 等预留空间
