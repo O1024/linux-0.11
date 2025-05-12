@@ -59,7 +59,7 @@ extern long startup_time;
  */
 #define EXT_MEM_K (*(unsigned short *)0x90002)
 #define DRIVE_INFO (*(struct drive_info *)0x90080)
-#define ORIG_ROOT_DEV (*(unsigned short *)0x901FC)
+#define ORIG_ROOT_DEV (*(unsigned short *)0x901FC)  // bootsect 重定向到 0x90000-90200 位置
 
 /*
  * Yeah, yeah, it's ugly, but I cannot find how to do this correctly
@@ -75,26 +75,40 @@ inb_p(0x71); \
 
 #define BCD_TO_BIN(val) ((val)=((val)&15) + ((val)>>4)*10)
 
+/**
+ * @brief 初始化系统时间
+ * 
+ * 此函数从 CMOS 实时时钟读取时间信息，将其从 BCD 码转换为二进制格式，
+ * 并计算出系统启动时间。为确保读取的时间信息准确，会重复读取秒数，
+ * 直到两次读取的秒数相同。
+ */
 static void time_init(void)
 {
-	struct tm time;
+    struct tm time;
 
-	do {
-		time.tm_sec = CMOS_READ(0);
-		time.tm_min = CMOS_READ(2);
-		time.tm_hour = CMOS_READ(4);
-		time.tm_mday = CMOS_READ(7);
-		time.tm_mon = CMOS_READ(8);
-		time.tm_year = CMOS_READ(9);
-	} while (time.tm_sec != CMOS_READ(0));
-	BCD_TO_BIN(time.tm_sec);
-	BCD_TO_BIN(time.tm_min);
-	BCD_TO_BIN(time.tm_hour);
-	BCD_TO_BIN(time.tm_mday);
-	BCD_TO_BIN(time.tm_mon);
-	BCD_TO_BIN(time.tm_year);
-	time.tm_mon--;
-	startup_time = kernel_mktime(&time);
+    // 重复读取时间信息，直到两次读取的秒数相同，确保时间信息的准确性
+    do {
+        time.tm_sec = CMOS_READ(0);   // 读取秒数
+        time.tm_min = CMOS_READ(2);   // 读取分钟数
+        time.tm_hour = CMOS_READ(4);  // 读取小时数
+        time.tm_mday = CMOS_READ(7);  // 读取日期
+        time.tm_mon = CMOS_READ(8);   // 读取月份
+        time.tm_year = CMOS_READ(9);  // 读取年份
+    } while (time.tm_sec != CMOS_READ(0));
+
+    // 将 BCD 码表示的时间信息转换为二进制格式
+    BCD_TO_BIN(time.tm_sec);
+    BCD_TO_BIN(time.tm_min);
+    BCD_TO_BIN(time.tm_hour);
+    BCD_TO_BIN(time.tm_mday);
+    BCD_TO_BIN(time.tm_mon);
+    BCD_TO_BIN(time.tm_year);
+
+    // 月份在 struct tm 中是从 0 开始计数的，因此减 1
+    time.tm_mon--;
+
+    // 计算系统启动时间
+    startup_time = kernel_mktime(&time);
 }
 
 static long memory_end = 0;
@@ -103,63 +117,89 @@ static long main_memory_start = 0;
 
 struct drive_info { char dummy[32]; } drive_info;
 
-void main(void)		/* This really IS void, no error here. */
-{			/* The startup routine assumes (well, ...) this */
-/*
- * Interrupts are still disabled. Do necessary setups, then
- * enable them
- */
+void main(void) /* This really IS void, no error here. */
+{               /* The startup routine assumes (well, ...) this */
+    /*
+     * Interrupts are still disabled. Do necessary setups, then
+     * enable them
+     */
 
- 	ROOT_DEV = ORIG_ROOT_DEV;
- 	drive_info = DRIVE_INFO;
-	memory_end = (1<<20) + (EXT_MEM_K<<10);
-	memory_end &= 0xfffff000;
-	if (memory_end > 16*1024*1024)
-		memory_end = 16*1024*1024;
-	if (memory_end > 12*1024*1024) 
-		buffer_memory_end = 4*1024*1024;
-	else if (memory_end > 6*1024*1024)
-		buffer_memory_end = 2*1024*1024;
-	else
-		buffer_memory_end = 1*1024*1024;
-	main_memory_start = buffer_memory_end;
+    ROOT_DEV = ORIG_ROOT_DEV;
+    drive_info = DRIVE_INFO;
+    memory_end = (1 << 20) + (EXT_MEM_K << 10);
+    memory_end &= 0xfffff000;
+    // 最大支持 16MB 内存
+    if (memory_end > 16 * 1024 * 1024) {
+        memory_end = 16 * 1024 * 1024;
+    }
+
+    if (memory_end > 12 * 1024 * 1024) {
+        buffer_memory_end = 4 * 1024 * 1024;
+    } else if (memory_end > 6 * 1024 * 1024) {
+        buffer_memory_end = 2 * 1024 * 1024;
+    } else {
+        buffer_memory_end = 1 * 1024 * 1024;
+    }
+    main_memory_start = buffer_memory_end;
+
 #ifdef RAMDISK
-	main_memory_start += rd_init(main_memory_start, RAMDISK*1024);
+    main_memory_start += rd_init(main_memory_start, RAMDISK * 1024);
 #endif
-	mem_init(main_memory_start,memory_end);
-	trap_init();
-	blk_dev_init();
-	chr_dev_init();
-	tty_init();
-	time_init();
-	sched_init();
-	buffer_init(buffer_memory_end);
-	hd_init();
-	floppy_init();
-	sti();
-	move_to_user_mode();
-	if (!fork()) {		/* we count on this going ok */
-		init();
-	}
-/*
- *   NOTE!!   For any other task 'pause()' would mean we have to get a
- * signal to awaken, but task0 is the sole exception (see 'schedule()')
- * as task 0 gets activated at every idle moment (when no other tasks
- * can run). For task0 'pause()' just means we go check if some other
- * task can run, and if not we return here.
- */
-	for(;;) pause();
+    // 划分内核区（0-1M）、buffer区（1-4M）和主内存区（4M-）
+    mem_init(main_memory_start, memory_end);
+
+    // 初始化中断陷阱门和系统门
+    trap_init();
+
+    // 初始化块设备请求队列
+    blk_dev_init();
+
+    // 初始化字符设备（打桩）
+    chr_dev_init();
+
+    // 初始化终端设备 serial 和 console 是物理概念，对应 uart 和 屏幕，tty 则是抽象概念
+    tty_init();
+
+    // 根据 CMOS 芯片存储的时间信息设置系统启动时间
+    time_init();
+
+    sched_init();
+
+    buffer_init(buffer_memory_end);
+
+    hd_init();
+
+    floppy_init();
+
+    sti();
+
+    move_to_user_mode();
+
+    if (!fork()) {        /* we count on this going ok */
+        init();
+    }
+
+    /*
+     *   NOTE!!   For any other task 'pause()' would mean we have to get a
+     * signal to awaken, but task0 is the sole exception (see 'schedule()')
+     * as task 0 gets activated at every idle moment (when no other tasks
+     * can run). For task0 'pause()' just means we go check if some other
+     * task can run, and if not we return here.
+     */
+    for (;;) {
+        pause();
+    }
 }
 
 static int printf(const char *fmt, ...)
 {
-	va_list args;
-	int i;
+    va_list args;
+    int i;
 
-	va_start(args, fmt);
-	write(1,printbuf,i=vsprintf(printbuf, fmt, args));
-	va_end(args);
-	return i;
+    va_start(args, fmt);
+    write(1,printbuf,i=vsprintf(printbuf, fmt, args));
+    va_end(args);
+    return i;
 }
 
 static char * argv_rc[] = { "/bin/sh", NULL };
@@ -170,43 +210,43 @@ static char * envp[] = { "HOME=/usr/root", NULL };
 
 void init(void)
 {
-	int pid,i;
+    int pid,i;
 
-	setup((void *) &drive_info);
-	(void) open("/dev/tty0",O_RDWR,0);
-	(void) dup(0);
-	(void) dup(0);
-	printf("%d buffers = %d bytes buffer space\n\r",NR_BUFFERS,
-		NR_BUFFERS*BLOCK_SIZE);
-	printf("Free mem: %d bytes\n\r",memory_end-main_memory_start);
-	if (!(pid=fork())) {
-		close(0);
-		if (open("/etc/rc",O_RDONLY,0))
-			_exit(1);
-		execve("/bin/sh",argv_rc,envp_rc);
-		_exit(2);
-	}
-	if (pid>0)
-		while (pid != wait(&i))
-			/* nothing */;
-	while (1) {
-		if ((pid=fork())<0) {
-			printf("Fork failed in init\r\n");
-			continue;
-		}
-		if (!pid) {
-			close(0);close(1);close(2);
-			setsid();
-			(void) open("/dev/tty0",O_RDWR,0);
-			(void) dup(0);
-			(void) dup(0);
-			_exit(execve("/bin/sh",argv,envp));
-		}
-		while (1)
-			if (pid == wait(&i))
-				break;
-		printf("\n\rchild %d died with code %04x\n\r",pid,i);
-		sync();
-	}
-	_exit(0);	/* NOTE! _exit, not exit() */
+    setup((void *) &drive_info);
+    (void) open("/dev/tty0",O_RDWR,0);
+    (void) dup(0);
+    (void) dup(0);
+    printf("%d buffers = %d bytes buffer space\n\r",NR_BUFFERS,
+        NR_BUFFERS*BLOCK_SIZE);
+    printf("Free mem: %d bytes\n\r",memory_end-main_memory_start);
+    if (!(pid=fork())) {
+        close(0);
+        if (open("/etc/rc",O_RDONLY,0))
+            _exit(1);
+        execve("/bin/sh",argv_rc,envp_rc);
+        _exit(2);
+    }
+    if (pid>0)
+        while (pid != wait(&i))
+            /* nothing */;
+    while (1) {
+        if ((pid=fork())<0) {
+            printf("Fork failed in init\r\n");
+            continue;
+        }
+        if (!pid) {
+            close(0);close(1);close(2);
+            setsid();
+            (void) open("/dev/tty0",O_RDWR,0);
+            (void) dup(0);
+            (void) dup(0);
+            _exit(execve("/bin/sh",argv,envp));
+        }
+        while (1)
+            if (pid == wait(&i))
+                break;
+        printf("\n\rchild %d died with code %04x\n\r",pid,i);
+        sync();
+    }
+    _exit(0);    /* NOTE! _exit, not exit() */
 }

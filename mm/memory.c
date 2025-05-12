@@ -397,18 +397,35 @@ void do_no_page(unsigned long error_code,unsigned long address)
 	oom();
 }
 
-void mem_init(long start_mem, long end_mem)
+/**
+ * @brief 初始化内存管理系统，设置内存映射表
+ * 
+ * 初始化内存映射表，将指定范围内的内存页标记为可用，其他内存页标记为已使用。
+ * 
+ * @param start_mem 可用内存的起始地址
+ * @param end_mem 可用内存的结束地址
+ */
+void  mem_init(long start_mem, long end_mem)
 {
-	int i;
+    int i;
 
-	HIGH_MEMORY = end_mem;
-	for (i=0 ; i<PAGING_PAGES ; i++)
-		mem_map[i] = USED;
-	i = MAP_NR(start_mem);
-	end_mem -= start_mem;
-	end_mem >>= 12;
-	while (end_mem-->0)
-		mem_map[i++]=0;
+    /* 设置高内存地址 */
+    HIGH_MEMORY = end_mem;
+
+    /* 无脑将 1 - 16M 对应的页标识置 0x64，共 0xF00 页标，1个页表对应 4KB */
+    for (i = 0; i < PAGING_PAGES; i++) {
+        mem_map[i] = USED;
+    }
+
+    /* {[0x0] = 0x64 <repeats 768 times>, [0x300] = 0x0 <repeats 3040 times>, [0xee0] = 0x64 <repeats 32 times>} */
+    i = MAP_NR(start_mem);
+    end_mem -= start_mem;
+    end_mem >>= 12;
+
+    /* 将4 - end_mem 范围内的内存页标记为可用 */
+    while (end_mem-- > 0) {
+        mem_map[i++] = 0;
+    }
 }
 
 void calc_mem(void)

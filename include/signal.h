@@ -45,11 +45,17 @@ typedef unsigned int sigset_t;		/* 32 bits */
 #define SIG_DFL		((void (*)(int))0)	/* default signal handling */
 #define SIG_IGN		((void (*)(int))1)	/* ignore signal */
 
+/**
+ * @brief 定义信号处理行为的结构体
+ * 
+ * 该结构体用于描述信号的处理行为，包含信号处理函数指针、
+ * 信号屏蔽集、处理标志和恢复函数指针。
+ */
 struct sigaction {
-	void (*sa_handler)(int);
-	sigset_t sa_mask;
-	int sa_flags;
-	void (*sa_restorer)(void);
+    void (*sa_handler)(int);  /* 信号处理函数指针，可设置为 SIG_DFL、SIG_IGN 或自定义函数 */
+    sigset_t sa_mask;         /* 在信号处理函数执行期间需要屏蔽的信号集 */
+    int sa_flags;             /* 信号处理的标志位，用于控制信号处理的行为 */
+    void (*sa_restorer)(void);/* 恢复函数指针，通常由系统使用 */
 };
 
 void (*signal(int _sig, void (*_func)(int)))(int);

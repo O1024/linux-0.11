@@ -154,12 +154,19 @@ void ll_rw_block(int rw, struct buffer_head * bh)
 	make_request(major,rw,bh);
 }
 
+/**
+ * @brief 初始化块设备请求队列
+ * 
+ * 此函数会遍历所有的请求结构体，将每个请求的设备号初始化为 -1，
+ * 表示该请求空闲，同时将请求的下一个指针置为 NULL。
+ */
 void blk_dev_init(void)
 {
-	int i;
+    int i;
 
-	for (i=0 ; i<NR_REQUEST ; i++) {
-		request[i].dev = -1;
-		request[i].next = NULL;
-	}
+    // 遍历所有请求结构体，进行初始化操作
+    for (i = 0; i < NR_REQUEST; i++) {
+        request[i].dev = -1;
+        request[i].next = NULL;
+    }
 }

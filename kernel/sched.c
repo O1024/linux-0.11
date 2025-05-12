@@ -69,7 +69,7 @@ long user_stack [ PAGE_SIZE>>2 ] ;
 struct {
 	long * a;
 	short b;
-	} stack_start = { & user_stack [PAGE_SIZE>>2] , 0x10 };
+	} stack_start = { & user_stack [PAGE_SIZE>>2] , 0x10 };     // 指向 user_stack 数组的末尾，段选择子为 0b00010 0 00，gdt 数据段 0级别
 /*
  *  'math_state_restore()' saves the current math information in the
  * old math state array, and gets the new ones from the current task
@@ -382,31 +382,60 @@ int sys_nice(long increment)
 	return 0;
 }
 
+/**
+ * @brief 初始化系统调度相关设置
+ * 
+ * 此函数负责完成系统调度的初始化工作，包括检查信号处理结构体大小、
+ * 设置 TSS 和 LDT 描述符、清空任务数组和 GDT 表项、清除 NT 标志位、
+ * 设置任务寄存器和局部描述符表寄存器、配置 8253 定时器、设置定时器中断门和系统调用门等。
+ */
 void sched_init(void)
 {
-	int i;
-	struct desc_struct * p;
+    int i;
+    struct desc_struct * p;
 
-	if (sizeof(struct sigaction) != 16)
-		panic("Struct sigaction MUST be 16 bytes");
-	set_tss_desc(gdt+FIRST_TSS_ENTRY,&(init_task.task.tss));
-	set_ldt_desc(gdt+FIRST_LDT_ENTRY,&(init_task.task.ldt));
-	p = gdt+2+FIRST_TSS_ENTRY;
-	for(i=1;i<NR_TASKS;i++) {
-		task[i] = NULL;
-		p->a=p->b=0;
-		p++;
-		p->a=p->b=0;
-		p++;
-	}
-/* Clear NT, so that we won't have troubles with that later on */
-	__asm__("pushfl ; andl $0xffffbfff,(%esp) ; popfl");
-	ltr(0);
-	lldt(0);
-	outb_p(0x36,0x43);		/* binary, mode 3, LSB/MSB, ch 0 */
-	outb_p(LATCH & 0xff , 0x40);	/* LSB */
-	outb(LATCH >> 8 , 0x40);	/* MSB */
-	set_intr_gate(0x20,&timer_interrupt);
-	outb(inb_p(0x21)&~0x01,0x21);
-	set_system_gate(0x80,&system_call);
+    // 检查 struct sigaction 的大小是否为 16 字节，若不是则触发内核恐慌
+    if (sizeof(struct sigaction) != 16)
+        panic("Struct sigaction MUST be 16 bytes");
+
+    // 设置第一个任务的 TSS 和 LDT 描述符（位于 gdt 区域）
+    set_tss_desc(gdt + FIRST_TSS_ENTRY, &(init_task.task.tss));
+    set_ldt_desc(gdt + FIRST_LDT_ENTRY, &(init_task.task.ldt));
+
+    // 指向 GDT 表中第一个任务 TSS 和 LDT 描述符之后的位置
+    p = gdt + 2 + FIRST_TSS_ENTRY;
+
+    // 初始化任务数组和剩余 TSS LDT 表项
+    for (i = 1; i < NR_TASKS; i++) {
+        task[i] = NULL;
+        // 清空 TSS 表项
+        p->a = p->b = 0;
+        p++;
+        // 清空 LDT 表项
+        p->a = p->b = 0;
+        p++;
+    }
+
+    /* 清除 NT 标志位，避免后续出现问题 */
+    __asm__("pushfl ; andl $0xffffbfff,(%esp) ; popfl");
+
+    // 加载任务寄存器
+    ltr(0);
+    // 加载局部描述符表寄存器
+    lldt(0);
+
+    // 配置 8253 定时器，二进制模式，模式 3，先写 LSB 后写 MSB，通道 0
+    outb_p(0x36, 0x43);
+    // 写入定时器计数值的低字节
+    outb_p(LATCH & 0xff, 0x40);
+    // 写入定时器计数值的高字节
+    outb(LATCH >> 8, 0x40);
+
+    // 设置 0x20 号中断门，指向定时器中断处理函数
+    set_intr_gate(0x20, &timer_interrupt);
+    // 允许 8259A 中断控制器的定时器中断
+    outb(inb_p(0x21) & ~0x01, 0x21);
+
+    // 设置 0x80 号系统调用门，指向系统调用处理函数
+    set_system_gate(0x80, &system_call);
 }
