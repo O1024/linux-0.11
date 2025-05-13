@@ -147,20 +147,22 @@ int free_page_tables(unsigned long from,unsigned long size)
  * 1 Mb-range, so the pages can be shared with the kernel. Thus the
  * special case for nr=xxxx.
  */
-int copy_page_tables(unsigned long from,unsigned long to,long size)
+int copy_page_tables(unsigned long from, unsigned long to, long size)
 {
-	unsigned long * from_page_table;
-	unsigned long * to_page_table;
+	unsigned long *from_page_table;
+	unsigned long *to_page_table;
 	unsigned long this_page;
-	unsigned long * from_dir, * to_dir;
+	unsigned long *from_dir, *to_dir;
 	unsigned long nr;
 
-	if ((from&0x3fffff) || (to&0x3fffff))
+	if ((from & 0x3fffff) || (to & 0x3fffff))
 		panic("copy_page_tables called with wrong alignment");
-	from_dir = (unsigned long *) ((from>>20) & 0xffc); /* _pg_dir = 0 */
-	to_dir = (unsigned long *) ((to>>20) & 0xffc);
-	size = ((unsigned) (size+0x3fffff)) >> 22;
-	for( ; size-->0 ; from_dir++,to_dir++) {
+
+	from_dir = (unsigned long *) ((from >> 20) & 0xffc); /* _pg_dir = 0 */
+	to_dir = (unsigned long *) ((to >> 20) & 0xffc);
+	size = ((unsigned) (size + 0x3fffff)) >> 22;
+
+	for( ; size-- > 0; from_dir++,to_dir++) {
 		if (1 & *to_dir)
 			panic("copy_page_tables: already exist");
 		if (!(1 & *from_dir))
@@ -168,8 +170,9 @@ int copy_page_tables(unsigned long from,unsigned long to,long size)
 		from_page_table = (unsigned long *) (0xfffff000 & *from_dir);
 		if (!(to_page_table = (unsigned long *) get_free_page()))
 			return -1;	/* Out of memory, see freeing */
+        
 		*to_dir = ((unsigned long) to_page_table) | 7;
-		nr = (from==0)?0xA0:1024;
+		nr = (from == 0) ? 0xA0 : 1024;
 		for ( ; nr-- > 0 ; from_page_table++,to_page_table++) {
 			this_page = *from_page_table;
 			if (!(1 & this_page))
@@ -184,8 +187,10 @@ int copy_page_tables(unsigned long from,unsigned long to,long size)
 			}
 		}
 	}
+
 	invalidate();
-	return 0;
+	
+    return 0;
 }
 
 /*

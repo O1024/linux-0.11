@@ -117,8 +117,7 @@ void schedule(void)
 		}
     }
 
-/* this is the scheduler proper: */
-
+    // 调度器主循环
 	while (1) {
 		c = -1;
 		next = 0;

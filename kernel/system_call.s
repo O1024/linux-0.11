@@ -207,14 +207,14 @@ sys_execve:
 .align 2
 sys_fork:
 	call find_empty_process
-	testl %eax,%eax
+	testl %eax, %eax
 	js 1f
-	push %gs
+	push %gs                            # 压栈 gs esi edi ebp eax
 	pushl %esi
 	pushl %edi
 	pushl %ebp
 	pushl %eax
-	call copy_process
+	call copy_process                   # 
 	addl $20,%esp
 1:	ret
 

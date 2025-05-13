@@ -22,10 +22,10 @@
  */
 static inline fork(void) __attribute__((always_inline));
 static inline pause(void) __attribute__((always_inline));
-static inline _syscall0(int,fork)
-static inline _syscall0(int,pause)
-static inline _syscall1(int,setup,void *,BIOS)
-static inline _syscall0(int,sync)
+static inline _syscall0(int, fork)
+static inline _syscall0(int, pause)
+static inline _syscall1(int, setup, void *,BIOS)
+static inline _syscall0(int, sync)
 
 #include <linux/tty.h>
 #include <linux/sched.h>
@@ -171,13 +171,13 @@ void main(void) /* This really IS void, no error here. */
 
     floppy_init();
 
+    // 开启 CPU 中断允许标志（如定时器中断、键盘中断等）
     sti();
 
     move_to_user_mode();
 
-    if (!fork()) {        /* we count on this going ok */
+    if (!fork())    // 创建 task1 进程，pid 2，task1 执行 init() 函数
         init();
-    }
 
     /*
      *   NOTE!!   For any other task 'pause()' would mean we have to get a
@@ -210,42 +210,50 @@ static char * envp[] = { "HOME=/usr/root", NULL };
 
 void init(void)
 {
-    int pid,i;
+    int pid, i;
 
     setup((void *) &drive_info);
-    (void) open("/dev/tty0",O_RDWR,0);
+    (void) open("/dev/tty0", O_RDWR, 0);
     (void) dup(0);
     (void) dup(0);
-    printf("%d buffers = %d bytes buffer space\n\r",NR_BUFFERS,
-        NR_BUFFERS*BLOCK_SIZE);
-    printf("Free mem: %d bytes\n\r",memory_end-main_memory_start);
-    if (!(pid=fork())) {
-        close(0);
-        if (open("/etc/rc",O_RDONLY,0))
+
+    printf("%d buffers = %d bytes buffer space\n\r", NR_BUFFERS, NR_BUFFERS * BLOCK_SIZE);
+    printf("Free mem: %d bytes\n\r", memory_end - main_memory_start);
+    if (!(pid = fork())) {                  // 创建 task2 进程（pid = 3），执行 /etc/rc
+        close(0);                           // 关闭标准输入
+        if (open("/etc/rc", O_RDONLY, 0))   // 标准输入指向 /etc/rc
             _exit(1);
-        execve("/bin/sh",argv_rc,envp_rc);
+        execve("/bin/sh", argv_rc, envp_rc);// 当不带参数执行 /bin/sh 时，会从标准输入读取命令
         _exit(2);
     }
-    if (pid>0)
-        while (pid != wait(&i))
-            /* nothing */;
+
+    // 等待 task2 进程结束
+    if (pid > 0)
+        while (pid != wait(&i));
+
     while (1) {
-        if ((pid=fork())<0) {
+        if ((pid = fork()) < 0) {   // 创建 task3 进程，pid 4，shell 终端
             printf("Fork failed in init\r\n");
             continue;
         }
         if (!pid) {
-            close(0);close(1);close(2);
+            close(0);
+            close(1);
+            close(2);
             setsid();
             (void) open("/dev/tty0",O_RDWR,0);
             (void) dup(0);
             (void) dup(0);
             _exit(execve("/bin/sh",argv,envp));
         }
-        while (1)
+
+        while (1) {
             if (pid == wait(&i))
                 break;
-        printf("\n\rchild %d died with code %04x\n\r",pid,i);
+        }
+
+        printf("\n\rchild %d died with code %04x\n\r", pid, i);
+
         sync();
     }
     _exit(0);    /* NOTE! _exit, not exit() */
