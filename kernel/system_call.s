@@ -174,27 +174,27 @@ device_not_available:
 
 .align 2
 timer_interrupt:
-	push %ds		# save ds,es and put kernel data space
-	push %es		# into them. %fs is used by _system_call
+	push %ds		                    # 保存 ds es fs 
+	push %es
 	push %fs
-	pushl %edx		# we save %eax,%ecx,%edx as gcc doesn't
-	pushl %ecx		# save those across function calls. %ebx
-	pushl %ebx		# is saved as we use that in ret_sys_call
+	pushl %edx		                    # 保存 edx ecx ebx eax
+	pushl %ecx
+	pushl %ebx
 	pushl %eax
-	movl $0x10,%eax
-	mov %ax,%ds
-	mov %ax,%es
-	movl $0x17,%eax
-	mov %ax,%fs
-	incl jiffies
-	movb $0x20,%al		# EOI to interrupt controller #1
-	outb %al,$0x20
-	movl CS(%esp),%eax
-	andl $3,%eax		# %eax is CPL (0 or 3, 0=supervisor)
-	pushl %eax
-	call do_timer		# 'do_timer(long CPL)' does everything from
-	addl $4,%esp		# task switching to accounting ...
-	jmp ret_from_sys_call
+	movl $0x10, %eax                    # 设置 ds es 为 0x10，0b00010 0 00，gdt 数据段 权限0级别
+	mov %ax, %ds
+	mov %ax, %es
+	movl $0x17, %eax                    # 设置 fs 为 0x17，0b00010 1 11，idt 数据段 权限3级别
+	mov %ax, %fs
+	incl jiffies                        # 增加 jiffies 计数器
+	movb $0x20, %al                     # 向 8259A 主芯片发送 EOI 命令
+	outb %al, $0x20
+	movl CS(%esp), %eax                 # 获取当前代码段选择子中的权限位
+	andl $3, %eax
+	pushl %eax                          # 将权限位压入栈中
+	call do_timer                       # do_timer(long CPL)
+	addl $4, %esp                       # 跳过 CPL 权限位
+	jmp ret_from_sys_call               # 执行 ret_from_sys_call
 
 .align 2
 sys_execve:

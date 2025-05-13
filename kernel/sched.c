@@ -43,7 +43,7 @@ void show_stat(void)
 			show_task(i,task[i]);
 }
 
-#define LATCH (1193180/HZ)
+#define LATCH (1193180 / HZ)        // 8253 定时器输入时钟脉冲为 1193180，1s 对应 1193180，因此 11931 对应 10ms
 
 extern void mem_use(void);
 
@@ -57,7 +57,7 @@ union task_union {
 
 static union task_union init_task = {INIT_TASK,};
 
-long volatile jiffies=0;
+long volatile jiffies = 0;
 long startup_time=0;
 struct task_struct *current = &(init_task.task);
 struct task_struct *last_task_used_math = NULL;
@@ -103,21 +103,19 @@ void math_state_restore()
  */
 void schedule(void)
 {
-	int i,next,c;
-	struct task_struct ** p;
+	int i, next, c;
+	struct task_struct **p;
 
-/* check alarm, wake up any interruptible tasks that have got a signal */
-
-	for(p = &LAST_TASK ; p > &FIRST_TASK ; --p)
+	for(p = &LAST_TASK; p > &FIRST_TASK; --p) {
 		if (*p) {
-			if ((*p)->alarm && (*p)->alarm < jiffies) {
-					(*p)->signal |= (1<<(SIGALRM-1));
-					(*p)->alarm = 0;
-				}
-			if (((*p)->signal & ~(_BLOCKABLE & (*p)->blocked)) &&
-			(*p)->state==TASK_INTERRUPTIBLE)
-				(*p)->state=TASK_RUNNING;
+			if ((*p)->alarm && (*p)->alarm < jiffies) {     // 检查任务的闹钟是否到期，alarm 表示任务到期的时钟节拍
+                (*p)->signal |= (1 << (SIGALRM - 1));
+                (*p)->alarm = 0;
+			}
+			if (((*p)->signal & ~(_BLOCKABLE & (*p)->blocked)) && (*p)->state == TASK_INTERRUPTIBLE)
+                (*p)->state = TASK_RUNNING;
 		}
+    }
 
 /* this is the scheduler proper: */
 
@@ -126,17 +124,25 @@ void schedule(void)
 		next = 0;
 		i = NR_TASKS;
 		p = &task[NR_TASKS];
+
+        // 遍历所有任务，找到时间片最大的任务
 		while (--i) {
 			if (!*--p)
 				continue;
-			if ((*p)->state == TASK_RUNNING && (*p)->counter > c)
-				c = (*p)->counter, next = i;
+			if ((*p)->state == TASK_RUNNING && (*p)->counter > c) {
+                c = (*p)->counter;
+                next = i;
+            }
 		}
-		if (c) break;
-		for(p = &LAST_TASK ; p > &FIRST_TASK ; --p)
-			if (*p)
-				(*p)->counter = ((*p)->counter >> 1) +
-						(*p)->priority;
+
+        // 如果时间片最大的任务存在，则退出循环，执行任务切换
+		if (c)
+            break;
+        
+        // 更新任务的时间片计数器（长期占用 CPU 的进程减少时间片，等待久的进程增加时间片）
+		for(p = &LAST_TASK; p > &FIRST_TASK; --p)
+			if (*p) // 此时所有 TASK_RUNNING 状态的任务时间片均为 0，但是其他状态的任务时间片不是 0
+				(*p)->counter = ((*p)->counter >> 1) + (*p)->priority;
 	}
 	switch_to(next);
 }
@@ -312,9 +318,9 @@ void do_timer(long cpl)
 			sysbeepstop();
 
 	if (cpl)
-		current->utime++;
+		current->utime++;               // 用户态程序运行时间
 	else
-		current->stime++;
+		current->stime++;               // 内核态程序运行时间
 
 	if (next_timer) {
 		next_timer->jiffies--;
@@ -327,12 +333,16 @@ void do_timer(long cpl)
 			(fn)();
 		}
 	}
+
 	if (current_DOR & 0xf0)
 		do_floppy_timer();
-	if ((--current->counter)>0) return;
-	current->counter=0;
-	if (!cpl) return;
-	schedule();
+
+	if ((--current->counter) > 0)       // 当前任务时间片未使用结束，返回继续执行
+        return;
+	current->counter = 0;               // 当前任务时间片使用结束，重置时间片计数器
+	if (!cpl)                           // 当前任务为内核态，返回继续执行
+        return;
+	schedule();                         // 调度其他任务执行
 }
 
 int sys_alarm(long seconds)
