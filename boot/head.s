@@ -260,7 +260,7 @@ setup_paging:
     # 保存页目录表地址并启动分页
     cld                                 # 清除方向标志位 DF，使串操作指令按地址递增方向执行
     xorl %eax, %eax                     # 将 eax 寄存器清零
-    movl %eax, %cr3                     # 将 eax 寄存器的值（0x000）存储到控制寄存器 cr3，设置页目录的起始地址
+    movl %eax, %cr3                     # 将 0x00000000 存储到控制寄存器 cr3，设置页目录的起始地址
     movl %cr0, %eax                     # 将控制寄存器 cr0 的值读取到 eax 寄存器
     orl $0x80000000, %eax               # 设置 eax 寄存器的第 31 位，即分页标志位 PG
     movl %eax, %cr0                     # 将修改后的 eax 寄存器的值写回控制寄存器 cr0，启用分页机制

@@ -75,6 +75,35 @@ inb_p(0x71); \
 
 #define BCD_TO_BIN(val) ((val)=((val)&15) + ((val)>>4)*10)
 
+/*
+ * @brief 自定义的 printf 函数，用于格式化输出字符串到标准输出。
+ *
+ * 该函数使用 vsprintf 对可变参数进行格式化，将结果存储在 printbuf 中，
+ * 然后通过 write 函数将格式化后的字符串输出到标准输出（文件描述符 1）。
+ *
+ * @param fmt 格式化字符串，包含普通文本和格式说明符。
+ * @param ... 可变参数列表，对应格式化字符串中的格式说明符。
+ * @return 成功时返回输出的字符数，发生错误时返回值可能不可靠。
+ */
+static int printf(const char *fmt, ...)
+{
+    // 定义一个 va_list 类型的变量，用于处理可变参数列表
+    va_list args;
+    // 用于存储格式化后的字符串长度
+    int i;
+
+    // 初始化可变参数列表，args 指向第一个可变参数
+    va_start(args, fmt);
+    // 使用 vsprintf 将可变参数按照 fmt 格式化为字符串存储在 printbuf 中，
+    // 并将格式化后的字符串长度赋值给 i，然后使用 write 函数将其输出到标准输出
+    write(1, printbuf, i = vsprintf(printbuf, fmt, args));
+    // 清理可变参数列表，释放相关资源
+    va_end(args);
+
+    // 返回格式化输出的字符数
+    return i;
+}
+
 /**
  * @brief 初始化系统时间
  * 
@@ -191,16 +220,7 @@ void main(void) /* This really IS void, no error here. */
     }
 }
 
-static int printf(const char *fmt, ...)
-{
-    va_list args;
-    int i;
 
-    va_start(args, fmt);
-    write(1,printbuf,i=vsprintf(printbuf, fmt, args));
-    va_end(args);
-    return i;
-}
 
 static char * argv_rc[] = { "/bin/sh", NULL };
 static char * envp_rc[] = { "HOME=/", NULL };

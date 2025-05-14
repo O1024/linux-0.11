@@ -112,6 +112,7 @@ void schedule(void)
                 (*p)->signal |= (1 << (SIGALRM - 1));
                 (*p)->alarm = 0;
 			}
+			// TASK_INTERRUPTIBLE 状态的任务接收到了未被阻塞的信号，将其唤醒，使其进入 TASK_RUNNING 状态
 			if (((*p)->signal & ~(_BLOCKABLE & (*p)->blocked)) && (*p)->state == TASK_INTERRUPTIBLE)
                 (*p)->state = TASK_RUNNING;
 		}
@@ -124,7 +125,7 @@ void schedule(void)
 		i = NR_TASKS;
 		p = &task[NR_TASKS];
 
-        // 遍历所有任务，找到时间片最大的任务
+        // 遍历所有 TASK_RUNNING 状态的任务，找到时间片最大的任务
 		while (--i) {
 			if (!*--p)
 				continue;
@@ -150,6 +151,7 @@ int sys_pause(void)
 {
 	current->state = TASK_INTERRUPTIBLE;
 	schedule();
+
 	return 0;
 }
 

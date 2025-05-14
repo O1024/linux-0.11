@@ -427,7 +427,7 @@ void  mem_init(long start_mem, long end_mem)
     end_mem -= start_mem;
     end_mem >>= 12;
 
-    /* 将4 - end_mem 范围内的内存页标记为可用 */
+    /* 将4M - end_mem 范围内的内存页标记为可用 */
     while (end_mem-- > 0) {
         mem_map[i++] = 0;
     }
@@ -435,19 +435,24 @@ void  mem_init(long start_mem, long end_mem)
 
 void calc_mem(void)
 {
-	int i,j,k,free=0;
-	long * pg_tbl;
+	int i, j, k, free = 0;
+	long *pg_tbl;
 
-	for(i=0 ; i<PAGING_PAGES ; i++)
-		if (!mem_map[i]) free++;
-	printk("%d pages free (of %d)\n\r",free,PAGING_PAGES);
-	for(i=2 ; i<1024 ; i++) {
-		if (1&pg_dir[i]) {
-			pg_tbl=(long *) (0xfffff000 & pg_dir[i]);
-			for(j=k=0 ; j<1024 ; j++)
-				if (pg_tbl[j]&1)
+    /* 计算空闲内存页数 */
+	for(i = 0 ; i < PAGING_PAGES ; i++)
+		if (!mem_map[i])
+            free++;
+	printk("%d pages free (of %d)\n\r", free, PAGING_PAGES);
+
+	for(i = 2; i < 1024; i++) { /* 为什么要跳过页0 和页1？ */
+		if (1 & pg_dir[i]) {    /* 如果 pg_dir[i] 的第 0 位为 1 则表示该页表存在 */
+			pg_tbl = (long *) (0xfffff000 & pg_dir[i]);
+            /* 遍历页表中的每个页表项 */
+			for(j = k = 0; j < 1024 ; j++) {
+				if (pg_tbl[j] & 1)  /* 如果页表项的第 0 位为 1 则表示该页存在 */
 					k++;
-			printk("Pg-dir[%d] uses %d pages\n",i,k);
+            }
+			printk("Pg-dir[%d] uses %d pages\n", i, k);
 		}
 	}
 }
