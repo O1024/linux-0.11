@@ -24,7 +24,7 @@ static inline fork(void) __attribute__((always_inline));
 static inline pause(void) __attribute__((always_inline));
 static inline _syscall0(int, fork)
 static inline _syscall0(int, pause)
-static inline _syscall1(int, setup, void *,BIOS)
+static inline _syscall1(int, setup, void *, BIOS)
 static inline _syscall0(int, sync)
 
 #include <linux/tty.h>

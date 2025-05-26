@@ -1,11 +1,27 @@
 set confirm off
 
-target remote :1234
-layout src
-layout regs
-focus cmd
+define display_stack
+    i registers ss
+    i registers sp
+    x/32x &user_stack[0x400-0x20]
+end
+
+define display_current
+    watch current
+    watch jiffies
+
+    display current
+    display current->pid
+    display current->counter
+    display jiffies
+end
 
 define debug_bootsect
+    target remote :1234
+    layout src
+    layout regs
+    focus cmd
+
     file tools/bootsect
 
     # _start
@@ -23,8 +39,14 @@ define debug_bootsect
 end
 
 define debug_main
+    target remote :1234
+    layout split
+    focus cmd
+
     file tools/system
-    b main
+    b main.c:main
+    b main.c:init
+    b sched.c:schedule
     c
 end
 
