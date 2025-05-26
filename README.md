@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/O1024/linux-0.11)
+
 Linux-0.11
 ==========
 
